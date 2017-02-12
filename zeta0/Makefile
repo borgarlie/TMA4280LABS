@@ -1,6 +1,6 @@
 CFLAGS+=-std=c99 -O3
 LDLIBS=-lm
-TARGETS=zeta0 testzeta0
+TARGETS=zeta0 testzeta0 vtestzeta0
 
 all: ${TARGETS}
 
@@ -12,3 +12,6 @@ run:
 
 utest:
 	./testzeta0
+
+vtest:
+	./vtestzeta0

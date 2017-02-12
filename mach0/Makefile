@@ -1,6 +1,6 @@
 CFLAGS+=-std=c99 -O3
 LDLIBS=-lm
-TARGETS=mach0 testmach0
+TARGETS=mach0 testmach0 vtestmach0
 
 all: ${TARGETS}
 
@@ -13,3 +13,6 @@ run:
 
 utest:
 	./testmach0
+
+vtest:
+	./vtestmach0
