@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include "../common/common.h"
 
 double zeta1 (int n);
-int isPowTwo(int n);
 
 int main ( int argc, char **argv ){
 
@@ -22,12 +22,6 @@ int main ( int argc, char **argv ){
     printf("Result: %.17f \n", result);
         
     exit ( EXIT_SUCCESS );
-}
-
-int isPowTwo(int x) {
-	while (((x % 2) == 0) && x > 1) /* While x is even and > 1 */
-		x /= 2;
- 	return (x == 1);
 }
 
 double zeta1 (int n) {
