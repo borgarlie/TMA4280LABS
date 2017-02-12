@@ -10,7 +10,6 @@ clean:
 run:
 	./mach0 100
 
-
 utest:
 	./testmach0
 
