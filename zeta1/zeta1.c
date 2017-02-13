@@ -19,23 +19,25 @@ int n; // number of total iterations
 int local_count; // numer of local iterations
 
 int main(int argc, char **argv){
-
-    // get number of iterations
-	if(argc != 2){
+    
+    if(argc != 2){
         printf("Usage: %s <n_iterations>\n", argv[0]);
         exit(-1);
     }
-    n = atoi(argv[1]);
 
     // initialise MPI
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // find number of local iterations
-    // TODO: should any n be handled and evenly distributed?
+    // fetch n on rank 0, broadcast n to all processes and calculate local work
+    if(rank == 0) {
+        n = atoi(argv[1]);
+    }
+    MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
     local_count = n / size;
-    printf("Local count: %d \n", local_count);
+
+    // TODO: should any n be handled and evenly distributed?
 
     // assert that the number of processes are correct
     // COMMENT: I think this is an ugly way to handle this.
@@ -48,8 +50,6 @@ int main(int argc, char **argv){
     local_values = calloc(local_count, sizeof(double));
 
     compute();
-    // TODO: check if it really is needed with a barrier
-    MPI_Barrier(MPI_COMM_WORLD);
     gather();
 
     // print values on rank 0 and free memory
@@ -77,6 +77,7 @@ void compute() {
 }
 
 void gather() {
+    // no need for synchronisation because of implicit barrier
     MPI_Gather(local_values, local_count, MPI_DOUBLE, values, local_count, MPI_DOUBLE, 0, MPI_COMM_WORLD); 
 } 
 
