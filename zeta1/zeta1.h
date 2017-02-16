@@ -8,11 +8,12 @@ double calculate_my_sum(double *local_values, int count);
 
 double mpi_zeta1(int iterations, int size, int rank) {
 	// find local number of iterations
-    int local_count = iterations / size;
+    int local_count = iterations / size + 1; // accomodate for rounding errors
     // setup arrays
     double *values;
     if(rank == 0){
-        values = calloc(iterations, sizeof(double));
+        // allocate enough space for the scatter operation (May this produce error if we do not set values to 0?)
+        values = calloc((local_count * size) + size, sizeof(double));
         compute(iterations, values); // &values ?
     }
     double *local_values = calloc(local_count, sizeof(double));
