@@ -1,12 +1,12 @@
-#ifndef ZETA1_H
-#define ZETA1_H
+#ifndef MACH1_H
+#define MACH1_H
 
-double mpi_zeta1(int iterations, int size, int rank);
+double mpi_mach1(int iterations, int size, int rank);
 void compute(int n, double *values);
 void scatter(double *local_values, double *values, int local_count);
 double calculate_my_sum(double *local_values, int count);
 
-double mpi_zeta1(int iterations, int size, int rank) {
+double mpi_mach1(int iterations, int size, int rank) {
 	// find local number of iterations
     int local_count = iterations / size + 1; // accomodate for rounding errors
     // setup arrays
@@ -28,14 +28,26 @@ double mpi_zeta1(int iterations, int size, int rank) {
         free (values);
     }
     free(local_values);
-    // calculate final result and return
-    double result = sqrt(sum*6);
-    return result;
+    // return the sum
+    return sum;
 }
 
 void compute(int n, double *values) {
-    for (int i=1; i<=n; i++) {
-        values[i-1] = 1.0/((double)i*(double)i);
+    for (int i=0; i<n; i++) {
+        double c = 1.0;
+        if (i % 2 != 0) c = -1.0;
+        // calculate first part of the equation
+        double x = 0.2;
+        double x1 = pow(x, 2*i+1);
+        double x2 = 2*i+1;
+        double arctanPart1 = (c*x1)/x2;
+        // calculate the second part
+        double x_2 = (double)1/(double)239;
+        double x1_2 = pow(x_2, 2*i+1);
+        double x2_2 = 2*i+1;
+        double arctanPart2 = (c*x1_2)/x2_2;
+        // subtract, scale and put in vector
+        values[i] = 16*arctanPart1 - 4*arctanPart2;
     }
 }
 
