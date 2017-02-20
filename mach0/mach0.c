@@ -3,9 +3,6 @@
 #include <math.h>
 #include "mach0.h"
 
-double mach0 ( int n );
-double arctan ( double x, int n);
-
 int main ( int argc, char **argv ){
 
     if(argc != 2){
