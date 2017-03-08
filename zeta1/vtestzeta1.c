@@ -43,7 +43,9 @@ void vtestzeta1() {
 		}
 	}
 
-	fclose(f);
+	if (rank == 0) {
+		fclose(f);
+	}
 
 	// Finalize the MPI environment.
     MPI_Finalize();
