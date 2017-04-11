@@ -30,9 +30,9 @@ int main(int argc, char **argv){
     // this is now u_max
     double result = parallel_poisson(nthreads, n, size, rank);
 
-    if (rank == 0) {
-        printf("Result: %.50f \n", result);
-    }
+    // if (rank == 0) {
+    //     printf("Result: %.50f \n", result);
+    // }
 
     // Finalize the MPI environment.
     MPI_Finalize();

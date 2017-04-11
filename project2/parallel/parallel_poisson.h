@@ -24,7 +24,8 @@ MPI_Datatype
 	row_remainder, col_remainder,
 	block_send, block_receive, 
 	block_send_remainder_right, block_receive_remainder_right,
-	block_send_remainder_bottom, block_receive_remainder_bottom;
+	block_send_remainder_bottom, block_receive_remainder_bottom,
+	corner_send, corner_receieve;
 
 // global variables
 int global_size, global_rank, global_matrix_size, global_threads;
@@ -80,7 +81,7 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
     real **b = mk_2D_array(local_size, m, false);
     real **bt = mk_2D_array(local_size, m, false);
 
-    // TESTING:::
+    // TESTING:::::::::::::::::::::::::::::
 
     int count = global_rank*local_n*global_matrix_size;
 
@@ -101,6 +102,8 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
         printf(" (rank=%d)\n", global_rank);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
     transpose(bt, b, local_n);
 
     printf("\n\nPrinting bt after transpose (rank=%d) : \n", global_rank);
@@ -112,14 +115,14 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
         printf(" (rank=%d)\n", global_rank);
     }
 
-    // printf("\n\nDone: \n\n");
+    // DONE TESTING ::::::::::::::::::::::::
 
 	double u_max = 2;
 	return u_max;
 }
 
 /*
-	Assumes that there is a squere matrix that always is dividable by number of processors
+	Used to create the vector types used when sending data between processors
 */
 void commit_vector_types(int local_n, int remainder) {
 
@@ -176,9 +179,6 @@ void commit_vector_types(int local_n, int remainder) {
 	MPI_Type_create_resized(temp_block_receive_remainder_right, 0, sizeof(double), &block_receive_remainder_right);
 	MPI_Type_commit(&block_receive_remainder_right);
 
-	// These two can be used in opposite direction probably ??
-	// NEW TEST
-
 	MPI_Type_vector(remainder, 1, column_stride, row, &temp_block_send_remainder_bottom);
 	MPI_Type_create_resized(temp_block_send_remainder_bottom, 0, sizeof(double), &block_send_remainder_bottom);
 	MPI_Type_commit(&block_send_remainder_bottom);
@@ -187,15 +187,22 @@ void commit_vector_types(int local_n, int remainder) {
 	MPI_Type_create_resized(temp_block_receive_remainder_bottom, 0, sizeof(double), &block_receive_remainder_bottom);
 	MPI_Type_commit(&block_receive_remainder_bottom);
 
+	// Datatypes for last corner where there is remainder in both directions
 
+	MPI_Datatype temp_corner_send, temp_corner_receive;
 
-	// other types for last corner? or just swap internal?
+	MPI_Type_vector(remainder, 1, column_stride, row_remainder, &temp_corner_send);
+	MPI_Type_create_resized(temp_corner_send, 0, sizeof(double), &corner_send);
+	MPI_Type_commit(&corner_send);
+
+	MPI_Type_vector(remainder, 1, 1, col_remainder, &temp_corner_receive);
+	MPI_Type_create_resized(temp_corner_receive, 0, sizeof(double), &corner_receieve);
+	MPI_Type_commit(&corner_receieve);
 
 }
 
-
 void transpose(real **bt, real **b, int local_n) {
-
+	
 	int *send_counts = malloc(global_size * sizeof(int));
 	int *send_displacements = malloc(global_size * sizeof(int));
 	MPI_Datatype *send_datatypes = malloc(global_size * sizeof(MPI_Datatype));
@@ -210,33 +217,24 @@ void transpose(real **bt, real **b, int local_n) {
     	send_displacements[i] = (int) (i * local_n * sizeof(double));
     	receive_displacements[i] = (int) (i * local_n * sizeof(double));
 
-
     	if (global_rank == global_size - 1 && i == global_size - 1) {
-    		send_datatypes[i] = block_send_remainder_right;
-    		receive_datatypes[i] = block_receive_remainder_right;
-    		// skip corner for now...
-    		// or just swap them instead of sending ? for all diagonals i==rank
-    		send_counts[i] = 0;
-    		receive_counts[i] = 0;
+    		send_datatypes[i] = corner_send;
+    		receive_datatypes[i] = corner_receieve;
+    		// maybe just swap them instead of sending ? for all diagonals i==rank
+    		// send_counts[i] = 0;
+    		// receive_counts[i] = 0;
     	}
     	else if (global_rank == global_size - 1) {
-    		// should only send and receieve remainder
-    		// send_datatypes[i] = block_receive_remainder_right; // correct
-    		// receive_datatypes[i] = block_receive_remainder_right; // wrong
-    		send_datatypes[i] = block_receive_remainder_right; // correct
-    		receive_datatypes[i] = block_send_remainder_bottom; // wrong
-    		// send_counts[i] = 1;
+    		send_datatypes[i] = block_receive_remainder_right;
+    		receive_datatypes[i] = block_send_remainder_bottom;
+    		// send_counts[i] = 0;
     		// receive_counts[i] = 0;
     	}
     	else if (i == global_size - 1) {
-    		// should only send and receieve remainder
-    		// printf("global rank: %d", global_rank);
-    		// send_datatypes[i] = block_receive_remainder_right; // wrong
-    		// receive_datatypes[i] = block_send_remainder_right; // correct 
-    		send_datatypes[i] = block_receive_remainder_bottom; // wrong
-    		receive_datatypes[i] = block_send_remainder_right; // correct 
+    		send_datatypes[i] = block_receive_remainder_bottom;
+    		receive_datatypes[i] = block_send_remainder_right;
     		// send_counts[i] = 0;
-    		// receive_counts[i] = 1;
+    		// receive_counts[i] = 0;
     	} else {
     		// should otherwise send and receieve whole blocks
     		send_datatypes[i] = block_send;
@@ -250,16 +248,6 @@ void transpose(real **bt, real **b, int local_n) {
         bt[0], receive_counts, receive_displacements, receive_datatypes, 
         MPI_COMM_WORLD);
 
-    // int MPI_Alltoallw(const void *sendbuf, const int sendcounts[],
-    //               const int sdispls[], const MPI_Datatype sendtypes[],
-    //               void *recvbuf, const int recvcounts[], const int rdispls[],
-    //               const MPI_Datatype recvtypes[], MPI_Comm comm)
-
-	// int MPI_Alltoallv(const void *sendbuf, const int *sendcounts,
-	 //                  const int *sdispls, MPI_Datatype sendtype, void *recvbuf,
-	 //                  const int *recvcounts, const int *rdispls, MPI_Datatype recvtype,
-	 //                  MPI_Comm comm)
-
     free(send_counts);
     free(send_displacements);
     free(send_datatypes);
@@ -268,21 +256,6 @@ void transpose(real **bt, real **b, int local_n) {
     free(receive_displacements);
     free(receive_datatypes);
 }
-
-/*
- * Write the transpose of b a matrix of R^(m*m) in bt.
- * In parallel the function MPI_Alltoallv is used to map directly the entries
- * stored in the array to the block structure, using displacement arrays.
- */
-
-// void transpose(real **bt, real **b, size_t m)
-// {
-//     for (size_t i = 0; i < m; i++) {
-//         for (size_t j = 0; j < m; j++) {
-//             bt[i][j] = b[j][i];
-//         }
-//     }
-// }
 
 /*
  * This function is used for initializing the right-hand side of the equation.
