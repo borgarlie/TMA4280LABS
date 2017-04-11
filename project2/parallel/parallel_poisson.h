@@ -179,6 +179,14 @@ void commit_vector_types(int local_n, int remainder) {
 	// These two can be used in opposite direction probably ??
 	// NEW TEST
 
+	MPI_Type_vector(remainder, 1, column_stride, row, &temp_block_send_remainder_bottom);
+	MPI_Type_create_resized(temp_block_send_remainder_bottom, 0, sizeof(double), &block_send_remainder_bottom);
+	MPI_Type_commit(&block_send_remainder_bottom);
+
+	MPI_Type_vector(remainder, 1, 1, col, &temp_block_receive_remainder_bottom);
+	MPI_Type_create_resized(temp_block_receive_remainder_bottom, 0, sizeof(double), &block_receive_remainder_bottom);
+	MPI_Type_commit(&block_receive_remainder_bottom);
+
 
 
 	// other types for last corner? or just swap internal?
@@ -213,15 +221,19 @@ void transpose(real **bt, real **b, int local_n) {
     	}
     	else if (global_rank == global_size - 1) {
     		// should only send and receieve remainder
+    		// send_datatypes[i] = block_receive_remainder_right; // correct
+    		// receive_datatypes[i] = block_receive_remainder_right; // wrong
     		send_datatypes[i] = block_receive_remainder_right; // correct
-    		receive_datatypes[i] = block_receive_remainder_right; // wrong
+    		receive_datatypes[i] = block_send_remainder_bottom; // wrong
     		// send_counts[i] = 1;
     		// receive_counts[i] = 0;
     	}
     	else if (i == global_size - 1) {
     		// should only send and receieve remainder
     		// printf("global rank: %d", global_rank);
-    		send_datatypes[i] = block_receive_remainder_right; // wrong
+    		// send_datatypes[i] = block_receive_remainder_right; // wrong
+    		// receive_datatypes[i] = block_send_remainder_right; // correct 
+    		send_datatypes[i] = block_receive_remainder_bottom; // wrong
     		receive_datatypes[i] = block_send_remainder_right; // correct 
     		// send_counts[i] = 0;
     		// receive_counts[i] = 1;
