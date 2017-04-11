@@ -1,0 +1,5 @@
+poisson/CMakeFiles/*
+parallel/parallel_poisson
+poisson/poisson
+poisson/poisson-f
+poisson/build/*
