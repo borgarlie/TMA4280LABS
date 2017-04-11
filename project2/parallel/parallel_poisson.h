@@ -20,7 +20,8 @@ void fstinv_(real *v, int *n, real *w, int *nn);
 
 // MPI datatypes used for transpose operation and ??
 MPI_Datatype
-	row, col,
+	row, col, 
+	row_remainder, col_remainder,
 	block_send, block_receive, 
 	block_send_remainder_right, block_receive_remainder_right,
 	block_send_remainder_bottom, block_receive_remainder_bottom;
@@ -81,7 +82,7 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
 
     // TESTING:::
 
-    int count = global_rank*local_size*global_matrix_size;
+    int count = global_rank*local_n*global_matrix_size;
 
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
@@ -91,24 +92,24 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
         }
     }
 
-    printf("\nPrinting bt before transpose: \n");
+    printf("\nPrinting bt before transpose (rank=%d) : \n", global_rank);
 
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
         	printf(" %2.0f ", bt[i][j]);
         }
-        printf("\n");
+        printf(" (rank=%d)\n", global_rank);
     }
 
     transpose(bt, b, local_n);
 
-    printf("\n\nPrinting bt after transpose: \n");
+    printf("\n\nPrinting bt after transpose (rank=%d) : \n", global_rank);
 
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
         	printf(" %2.0f ", bt[i][j]);
         }
-        printf("\n");
+        printf(" (rank=%d)\n", global_rank);
     }
 
     // printf("\n\nDone: \n\n");
@@ -126,6 +127,8 @@ void commit_vector_types(int local_n, int remainder) {
 
 	int column_stride = global_matrix_size;
 
+	// Datatypes for row and column for whole blocks
+
 	MPI_Datatype temp_row, temp_col;
 
 	MPI_Type_vector(local_n, 1, 1, MPI_DOUBLE, &temp_row);
@@ -135,6 +138,8 @@ void commit_vector_types(int local_n, int remainder) {
     MPI_Type_vector(local_n, 1, column_stride, MPI_DOUBLE, &temp_col);
     MPI_Type_create_resized(temp_col, 0, sizeof(double), &col);
     MPI_Type_commit(&col);
+
+    // Datatypes for whole blocks
 
 	MPI_Datatype 
 		temp_block_send, temp_block_receive, 
@@ -149,13 +154,34 @@ void commit_vector_types(int local_n, int remainder) {
 	MPI_Type_create_resized(temp_block_receive, 0, sizeof(double), &block_receive);
 	MPI_Type_commit(&block_receive);
 
-	// is row / column switched?
+	// Datatypes for row and column for remainder
 
-	// TODO: Impl remainder datatypes
+	MPI_Datatype temp_row_remainder, temp_col_remainder;
 
-	// MPI_Type_vector(local_n, 1, column_stride, row, &temp_block_send_remainder_right);
-	// MPI_Type_create_resized(temp_block_send, 0, sizeof(double), &block_send);
-	// MPI_Type_commit(&block_send);
+	MPI_Type_vector(remainder, 1, 1, MPI_DOUBLE, &temp_row_remainder);
+	MPI_Type_create_resized(temp_row_remainder, 0, sizeof(double), &row_remainder);
+	MPI_Type_commit(&row_remainder);
+
+    MPI_Type_vector(remainder, 1, column_stride, MPI_DOUBLE, &temp_col_remainder);
+    MPI_Type_create_resized(temp_col_remainder, 0, sizeof(double), &col_remainder);
+    MPI_Type_commit(&col_remainder);
+
+    // Datatypes for whole remainder blocks
+
+	MPI_Type_vector(local_n, 1, column_stride, row_remainder, &temp_block_send_remainder_right);
+	MPI_Type_create_resized(temp_block_send_remainder_right, 0, sizeof(double), &block_send_remainder_right);
+	MPI_Type_commit(&block_send_remainder_right);
+
+	MPI_Type_vector(local_n, 1, 1, col_remainder, &temp_block_receive_remainder_right);
+	MPI_Type_create_resized(temp_block_receive_remainder_right, 0, sizeof(double), &block_receive_remainder_right);
+	MPI_Type_commit(&block_receive_remainder_right);
+
+	// These two can be used in opposite direction probably ??
+	// NEW TEST
+
+
+
+	// other types for last corner? or just swap internal?
 
 }
 
@@ -177,24 +203,33 @@ void transpose(real **bt, real **b, int local_n) {
     	receive_displacements[i] = (int) (i * local_n * sizeof(double));
 
 
-    	if (global_rank == global_size - 1) {
+    	if (global_rank == global_size - 1 && i == global_size - 1) {
+    		send_datatypes[i] = block_send_remainder_right;
+    		receive_datatypes[i] = block_receive_remainder_right;
+    		// skip corner for now...
+    		// or just swap them instead of sending ? for all diagonals i==rank
+    		send_counts[i] = 0;
+    		receive_counts[i] = 0;
+    	}
+    	else if (global_rank == global_size - 1) {
     		// should only send and receieve remainder
-    		send_counts[i] = 0;
-    		receive_counts[i] = 0;
+    		send_datatypes[i] = block_receive_remainder_right; // correct
+    		receive_datatypes[i] = block_receive_remainder_right; // wrong
+    		// send_counts[i] = 1;
+    		// receive_counts[i] = 0;
     	}
-    	else if (global_rank == i) {
-    		// TEST: Rank 1 only send to self
-    		printf("global rank: %d", global_rank);
-    		send_counts[i] = 1;
-    		receive_counts[i] = 1;
+    	else if (i == global_size - 1) {
+    		// should only send and receieve remainder
+    		// printf("global rank: %d", global_rank);
+    		send_datatypes[i] = block_receive_remainder_right; // wrong
+    		receive_datatypes[i] = block_send_remainder_right; // correct 
+    		// send_counts[i] = 0;
+    		// receive_counts[i] = 1;
     	} else {
-    		send_counts[i] = 0;
-    		receive_counts[i] = 0;
+    		// should otherwise send and receieve whole blocks
+    		send_datatypes[i] = block_send;
+    		receive_datatypes[i] = block_receive;
     	}
-
-
-    	send_datatypes[i] = block_send;
-    	receive_datatypes[i] = block_receive;
 
     }
 
