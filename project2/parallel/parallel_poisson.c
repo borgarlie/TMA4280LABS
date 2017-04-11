@@ -25,7 +25,7 @@ int main(int argc, char **argv){
 
     // assert that the number of processes are correct
     // COMMENT: I think this is an ugly way to handle this.
-    assert(isPowTwo(size) == 1);
+    // assert(isPowTwo(n) == 1);
 
     // this is now u_max
     double result = parallel_poisson(nthreads, n, size, rank);

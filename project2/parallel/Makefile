@@ -11,4 +11,4 @@ clean:
 	-rm -f ${TARGETS}
 
 run:
-	mpirun -np ${NP} parallel_poisson ${OMPP} 6
+	mpirun -np ${NP} parallel_poisson ${OMPP} 8
