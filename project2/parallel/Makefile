@@ -2,7 +2,7 @@ CC=mpicc
 CFLAGS+=-std=c99 -O3
 LDLIBS=-lm -fopenmp
 TARGETS=parallel_poisson
-NP=8
+NP=2
 OMPP=4
 
 all: ${TARGETS}
@@ -11,4 +11,4 @@ clean:
 	-rm -f ${TARGETS}
 
 run:
-	mpirun -np ${NP} parallel_poisson ${OMPP} 128
+	mpirun -np ${NP} parallel_poisson ${OMPP} 6
