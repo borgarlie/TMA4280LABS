@@ -23,16 +23,23 @@ int main(int argc, char **argv){
     int nthreads = atoi(argv[1]);
     int n = atoi(argv[2]);
 
-    // assert that the number of processes are correct
-    // COMMENT: I think this is an ugly way to handle this.
+    // check that n is a power of two
     // assert(isPowTwo(n) == 1);
 
-    // this is now u_max
+    double start_time;
+    if (rank == 0) {
+        start_time = MPI_Wtime();
+    }
+
+    // this is now u_max_reduced
     double result = parallel_poisson(nthreads, n, size, rank);
 
-    // if (rank == 0) {
-    //     printf("Result: %.50f \n", result);
-    // }
+    if (rank == 0) {
+        double end_time = MPI_Wtime();
+        double total_time = end_time - start_time;
+        printf("Result: %e \n", result);
+        printf("Total time: %f sec \n", total_time);
+    }
 
     // Finalize the MPI environment.
     MPI_Finalize();

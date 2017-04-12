@@ -54,8 +54,6 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
     	local_size = remainder;
     }
 
-    // TODO: Check if all of the stuff here is still used?
-
 	/*
      * Grid points are generated with constant mesh size on both x- and y-axis.
      */
@@ -83,42 +81,126 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
 
     // TESTING:::::::::::::::::::::::::::::
 
-    int count = global_rank*local_n*global_matrix_size;
+    // int count = global_rank*local_n*global_matrix_size;
 
-    for (size_t i = 0; i < local_size; i++) {
-        for (size_t j = 0; j < global_matrix_size; j++) {
-            b[i][j] = count;
-            bt[i][j] = count;
-            count++;
-        }
-    }
+    // for (size_t i = 0; i < local_size; i++) {
+    //     for (size_t j = 0; j < global_matrix_size; j++) {
+    //         b[i][j] = count;
+    //         bt[i][j] = count;
+    //         count++;
+    //     }
+    // }
 
-    printf("\nPrinting bt before transpose (rank=%d) : \n", global_rank);
+    // printf("\nPrinting bt before transpose (rank=%d) : \n", global_rank);
 
-    for (size_t i = 0; i < local_size; i++) {
-        for (size_t j = 0; j < global_matrix_size; j++) {
-        	printf(" %2.0f ", bt[i][j]);
-        }
-        printf(" (rank=%d)\n", global_rank);
-    }
+    // for (size_t i = 0; i < local_size; i++) {
+    //     for (size_t j = 0; j < global_matrix_size; j++) {
+    //     	printf(" %2.0f ", bt[i][j]);
+    //     }
+    //     printf(" (rank=%d)\n", global_rank);
+    // }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    // MPI_Barrier(MPI_COMM_WORLD);
 
-    transpose(bt, b, local_n);
+    // transpose(bt, b, local_n);
 
-    printf("\n\nPrinting bt after transpose (rank=%d) : \n", global_rank);
+    // printf("\n\nPrinting bt after transpose (rank=%d) : \n", global_rank);
 
-    for (size_t i = 0; i < local_size; i++) {
-        for (size_t j = 0; j < global_matrix_size; j++) {
-        	printf(" %2.0f ", bt[i][j]);
-        }
-        printf(" (rank=%d)\n", global_rank);
-    }
+    // for (size_t i = 0; i < local_size; i++) {
+    //     for (size_t j = 0; j < global_matrix_size; j++) {
+    //     	printf(" %2.0f ", bt[i][j]);
+    //     }
+    //     printf(" (rank=%d)\n", global_rank);
+    // }
 
     // DONE TESTING ::::::::::::::::::::::::
 
-	double u_max = 2;
-	return u_max;
+    /*
+     * This vector will holds coefficients of the Discrete Sine Transform (DST)
+     * but also of the Fast Fourier Transform used in the FORTRAN code.
+     * The storage size is set to nn = 4 * n, look at Chapter 9. pages 98-100:
+     * - Fourier coefficients are complex so storage is used for the real part
+     *   and the imaginary part.
+     * - Fourier coefficients are defined for j = [[ - (n-1), + (n-1) ]] while 
+     *   DST coefficients are defined for j [[ 0, n-1 ]].
+     * As explained in the Lecture notes coefficients for positive j are stored
+     * first.
+     * The array is allocated once and passed as arguments to avoid doings 
+     * reallocations at each function call.
+     */
+    int nn = 4 * n;
+    real *z = mk_1D_array(nn, false);
+
+    /*
+     * Initialize the right hand side data for a given rhs function.
+     * Note that the right hand-side is set at nodes corresponding to degrees
+     * of freedom, so it excludes the boundary (bug fixed by petterjf 2017).
+     * 
+     */
+    for (size_t i = 0; i < local_size; i++) {
+        for (size_t j = 0; j < global_matrix_size; j++) {
+        	// must use offset here because of local_size 
+            b[i][j] = h * h * rhs(grid[i+1+offset], grid[j+1]);
+        }
+    }
+
+    /*
+     * Compute \tilde G^T = S^-1 * (S * G)^T (Chapter 9. page 101 step 1)
+     * Instead of using two matrix-matrix products the Discrete Sine Transform
+     * (DST) is used.
+     * The DST code is implemented in FORTRAN in fsf.f and can be called from C.
+     * The array zz is used as storage for DST coefficients and internally for 
+     * FFT coefficients in fst_ and fstinv_.
+     * In functions fst_ and fst_inv_ coefficients are written back to the input 
+     * array (first argument) so that the initial values are overwritten.
+     */
+    for (size_t i = 0; i < local_size; i++) {
+        fst_(b[i], &n, z, &nn);
+    }
+    transpose(bt, b, local_n);
+    for (size_t i = 0; i < local_size; i++) {
+        fstinv_(bt[i], &n, z, &nn);
+    }
+
+    /*
+     * Solve Lambda * \tilde U = \tilde G (Chapter 9. page 101 step 2)
+     */
+    for (size_t i = 0; i < local_size; i++) {
+        for (size_t j = 0; j < global_matrix_size; j++) {
+        	// Need to append offset to diag[i] since we use local size
+            bt[i][j] = bt[i][j] / (diag[i + offset] + diag[j]);
+        }
+    }
+
+    /*
+     * Compute U = S^-1 * (S * Utilde^T) (Chapter 9. page 101 step 3)
+     */
+    for (size_t i = 0; i < local_size; i++) {
+        fst_(bt[i], &n, z, &nn);
+    }
+    transpose(b, bt, local_n);
+    for (size_t i = 0; i < local_size; i++) {
+        fstinv_(b[i], &n, z, &nn);
+    }
+
+    /*
+     * Compute maximal value of solution for convergence analysis in L_\infty
+     * norm.
+     */
+    double u_max = 0.0;
+    for (size_t i = 0; i < local_size; i++) {
+        for (size_t j = 0; j < global_matrix_size; j++) {
+            u_max = u_max > b[i][j] ? u_max : b[i][j];
+        }
+    }
+
+    printf("U_max : %e (Rank=%d) \n", u_max, global_rank);
+
+    // Find the maximum error accross all ranks
+    double u_max_reduced = 0.0;
+    MPI_Reduce(&u_max, &u_max_reduced, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+	return u_max_reduced;
 }
 
 /*
@@ -202,7 +284,7 @@ void commit_vector_types(int local_n, int remainder) {
 }
 
 void transpose(real **bt, real **b, int local_n) {
-	
+
 	int *send_counts = malloc(global_size * sizeof(int));
 	int *send_displacements = malloc(global_size * sizeof(int));
 	MPI_Datatype *send_datatypes = malloc(global_size * sizeof(MPI_Datatype));
