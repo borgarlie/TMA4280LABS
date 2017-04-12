@@ -24,7 +24,7 @@ int main(int argc, char **argv){
     int n = atoi(argv[2]);
 
     // check that n is a power of two
-    // assert(isPowTwo(n) == 1);
+    assert(isPowTwo(n) == 1);
 
     double start_time;
     if (rank == 0) {

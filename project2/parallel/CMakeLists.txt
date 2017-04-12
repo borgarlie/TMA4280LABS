@@ -20,6 +20,8 @@ if(MPI_FOUND)
   set(DEPLIBS_F ${DEPLIBS_F} ${MPI_Fortran_LIBRARIES})
 endif()
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fopenmp")
+
 if(ENABLE_OPENMP)
   find_package(OpenMP)
   if(OPENMP_FOUND)

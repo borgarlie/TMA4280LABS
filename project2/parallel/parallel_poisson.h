@@ -54,10 +54,20 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
     	local_size = remainder;
     }
 
+    // OPEN MP TEST
+    // #pragma omp parallel for num_threads(global_threads)
+    // for (int i=0; i<10; i++) {
+    // 	int tid = omp_get_thread_num();
+    // 	int nthreads = omp_get_num_threads();
+    // 	printf("Hello World from thread = %d\n", tid);
+    // 	printf("Number of threads = %d\n", nthreads);
+    // }
+
 	/*
      * Grid points are generated with constant mesh size on both x- and y-axis.
      */
     real *grid = mk_1D_array(n+1, false);
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < n+1; i++) {
         grid[i] = i * h;
     }
@@ -68,6 +78,7 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
      * Note that the indexing starts from zero here, thus i+1.
      */
     real *diag = mk_1D_array(m, false);
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < m; i++) {
         diag[i] = 2.0 * (1.0 - cos((i+1) * PI / n));
     }
@@ -129,7 +140,10 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
      * reallocations at each function call.
      */
     int nn = 4 * n;
-    real *z = mk_1D_array(nn, false);
+    // Need to change z to a 2d array such that the different loops running
+    // in parallel dont get race conditions - each thread has its own array
+    // index with: omp_get_thread_num()
+    real **z = mk_2D_array(global_threads, nn, false);
 
     /*
      * Initialize the right hand side data for a given rhs function.
@@ -137,9 +151,10 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
      * of freedom, so it excludes the boundary (bug fixed by petterjf 2017).
      * 
      */
+    #pragma omp parallel for collapse(2) num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
-        	// must use offset here because of local_size 
+        	// must use offset here because of local_size
             b[i][j] = h * h * rhs(grid[i+1+offset], grid[j+1]);
         }
     }
@@ -154,17 +169,20 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
      * In functions fst_ and fst_inv_ coefficients are written back to the input 
      * array (first argument) so that the initial values are overwritten.
      */
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
-        fst_(b[i], &n, z, &nn);
+        fst_(b[i], &n, z[omp_get_thread_num()], &nn);
     }
     transpose(bt, b, local_n);
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
-        fstinv_(bt[i], &n, z, &nn);
+        fstinv_(bt[i], &n, z[omp_get_thread_num()], &nn);
     }
 
     /*
      * Solve Lambda * \tilde U = \tilde G (Chapter 9. page 101 step 2)
      */
+    #pragma omp parallel for collapse(2) num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
         	// Need to append offset to diag[i] since we use local size
@@ -175,12 +193,14 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
     /*
      * Compute U = S^-1 * (S * Utilde^T) (Chapter 9. page 101 step 3)
      */
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
-        fst_(bt[i], &n, z, &nn);
+        fst_(bt[i], &n, z[omp_get_thread_num()], &nn);
     }
     transpose(b, bt, local_n);
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
-        fstinv_(b[i], &n, z, &nn);
+        fstinv_(b[i], &n, z[omp_get_thread_num()], &nn);
     }
 
     /*
@@ -188,13 +208,14 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
      * norm.
      */
     double u_max = 0.0;
+    #pragma omp parallel for reduction(max: u_max) collapse(2) num_threads(global_threads)
     for (size_t i = 0; i < local_size; i++) {
         for (size_t j = 0; j < global_matrix_size; j++) {
             u_max = u_max > b[i][j] ? u_max : b[i][j];
         }
     }
 
-    printf("U_max : %e (Rank=%d) \n", u_max, global_rank);
+    // printf("U_max : %e (Rank=%d) \n", u_max, global_rank);
 
     // Find the maximum error accross all ranks
     double u_max_reduced = 0.0;
@@ -293,6 +314,7 @@ void transpose(real **bt, real **b, int local_n) {
     int *receive_displacements= malloc(global_size * sizeof(int));
     MPI_Datatype *receive_datatypes = malloc(global_size * sizeof(MPI_Datatype));
 
+    #pragma omp parallel for num_threads(global_threads)
     for (size_t i = 0; i < global_size; i++) {
     	send_counts[i] = 1;
     	receive_counts[i] = 1;
