@@ -10,6 +10,7 @@ void commit_vector_types(int local_n, int remainder);
 real *mk_1D_array(size_t n, bool zero);
 real **mk_2D_array(size_t n1, size_t n2, bool zero);
 void transpose(real **bt, real **b, int local_n);
+real solution(real x, real y);
 real rhs(real x, real y);
 
 // Functions implemented in FORTRAN in fst.f and called from C.
@@ -215,11 +216,31 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
         }
     }
 
-    // printf("U_max : %e (Rank=%d) \n", u_max, global_rank);
-
     // Find the maximum error accross all ranks
     double u_max_reduced = 0.0;
     MPI_Reduce(&u_max, &u_max_reduced, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    // printf("U_max : %e (Rank=%d) \n", u_max, global_rank);
+
+    /*
+    *	Compute the error as described in appendix B
+    */
+    double local_error = 0.0;
+    for (size_t i = 0; i < local_size; i++) {
+        for (size_t j = 0; j < global_matrix_size; j++) {
+            real correct = solution(grid[(i + offset) + 1], grid[j+1]);
+            real current_error = fabs(correct - b[i][j]);
+            local_error = local_error > current_error ? local_error : current_error;
+        }
+    }
+
+    double global_error = 0.0;
+    MPI_Reduce(&local_error, &global_error, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    printf("Local error : %e (Rank=%d) \n", local_error, global_rank);
+    if (rank == 0) {
+    	printf("Global error: %e \n", global_error);
+    }
 
 	return u_max_reduced;
 }
@@ -362,19 +383,25 @@ void transpose(real **bt, real **b, int local_n) {
 }
 
 /*
+ * Solution used for verification as described in Appendix B
+ */
+real solution(real x, real y) {
+    return sin(PI * x) * sin(2 * PI * y);
+}
+
+/*
  * This function is used for initializing the right-hand side of the equation.
  * Other functions can be defined to swtich between problem definitions.
  */
-
 real rhs(real x, real y) {
-    return 2 * (y - y*y + x - x*x);
+    // return 2 * (y - y*y + x - x*x);
+    return 5 * PI * PI * sin(PI * x) * sin(2 * PI * y);
 }
 
  /*
  * The allocation of a vectore of size n is done with just allocating an array.
  * The only thing to notice here is the use of calloc to zero the array.
  */
-
 real *mk_1D_array(size_t n, bool zero)
 {
     if (zero) {
@@ -391,7 +418,6 @@ real *mk_1D_array(size_t n, bool zero)
  *   is contigusous,
  * 3. pointers are set for each row to the address of first element.
  */
-
 real **mk_2D_array(size_t n1, size_t n2, bool zero)
 {
     // 1
