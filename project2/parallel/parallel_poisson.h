@@ -237,7 +237,7 @@ double parallel_poisson(int n_threads_omp, int n, int size, int rank) {
     double global_error = 0.0;
     MPI_Reduce(&local_error, &global_error, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
-    printf("Local error : %e (Rank=%d) \n", local_error, global_rank);
+    // printf("Local error : %e (Rank=%d) \n", local_error, global_rank);
     if (rank == 0) {
     	printf("Global error: %e \n", global_error);
     }
